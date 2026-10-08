@@ -119,37 +119,78 @@ createApp({
       const svg = d3.select(finishChart);
       svg.selectAll('*').remove();
       const width = 1180;
-      const height = 390;
-      const margin = { top: 12, right: 18, bottom: 36, left: 0 };
+      const height = 420;
+      const margin = { top: 24, right: 12, bottom: 48, left: 72 };
       svg.attr('viewBox', `0 0 ${width} ${height}`);
-      const finishers = this.finishers.slice().sort((a, b) => {
-        const minute = Math.floor(a.finishSeconds / 60) - Math.floor(b.finishSeconds / 60);
-        return minute || (a.gender === b.gender ? a.age - b.age : a.gender === 'M' ? -1 : 1) || a.finishSeconds - b.finishSeconds;
-      });
+      const finishers = this.finishers.slice();
       const min = d3.min(finishers, d => d.finishSeconds) || 0;
       const max = d3.max(finishers, d => d.finishSeconds) || 1;
-      const x = d3.scaleLinear().domain([min, max]).range([0, width - margin.right]);
-      const y = d3.scaleLinear().domain([0, finishers.length - 1]).range([margin.top, height - margin.bottom]);
-      const color = d3.scaleOrdinal().domain(['M', 'F']).range(['#35a2ec', '#f5839b']);
+      const firstMinute = Math.floor(min / 60);
+      const lastMinute = Math.floor(max / 60);
+      const baseline = height - margin.bottom;
+      const x = d3.scaleLinear().domain([firstMinute, lastMinute + 1]).range([margin.left, width - margin.right]);
+      const ageExtent = d3.extent(finishers, d => +d.age);
+      const maleColor = d3.scaleLinear().domain(ageExtent).range(['#087fd6', '#84d0fb']).clamp(true);
+      const femaleColor = d3.scaleLinear().domain(ageExtent).range(['#f05879', '#ffc0cc']).clamp(true);
+      const minuteGroups = d3.groups(finishers, runner => Math.floor(runner.finishSeconds / 60))
+        .map(([minute, runners]) => ({
+          minute,
+          runners: runners.sort((a, b) => {
+            if (a.gender !== b.gender) return a.gender === 'F' ? -1 : 1;
+            return d3.ascending(+a.age, +b.age) || d3.ascending(a.finishSeconds, b.finishSeconds);
+          })
+        }))
+        .sort((a, b) => a.minute - b.minute);
+      const maxPerMinute = d3.max(minuteGroups, group => group.runners.length) || 1;
+      const rowHeight = Math.min(2.6, (baseline - margin.top) / maxPerMinute);
+      const minuteWidth = Math.max(1.7, x(firstMinute + 1) - x(firstMinute) - .35);
+      const marks = minuteGroups.flatMap(group => group.runners.map((runner, index) => ({ ...runner, minute: group.minute, stackIndex: index })));
       const tooltip = d3.select(finishChart.parentNode).selectAll('.chart-tooltip').data([null]).join('div').attr('class', 'chart-tooltip');
-      svg.append('g').selectAll('line').data(finishers).join('line')
-        .attr('x1', d => x(d.finishSeconds)).attr('x2', d => x(d.finishSeconds) + 2.6)
-        .attr('y1', (_, index) => y(index)).attr('y2', (_, index) => y(index))
-        .attr('stroke', d => color(d.gender)).attr('stroke-width', 2.1).attr('stroke-linecap', 'round')
+      svg.append('g').attr('class', 'finish-marks').selectAll('rect').data(marks).join('rect')
+        .attr('x', d => x(d.minute))
+        .attr('y', d => baseline - (d.stackIndex + 1) * rowHeight)
+        .attr('width', minuteWidth)
+        .attr('height', Math.max(1.1, rowHeight + .08))
+        .attr('fill', d => d.gender === 'F' ? femaleColor(+d.age) : maleColor(+d.age))
         .on('mouseenter', (event, runner) => {
           tooltip.style('opacity', 1).html(`<strong>${runner.name}</strong><span>${runner.finishTime} · ${runner.age} лет · ${runner.country}</span>`);
         })
         .on('mousemove', event => tooltip.style('left', `${event.offsetX + 14}px`).style('top', `${event.offsetY - 16}px`))
         .on('mouseleave', () => tooltip.style('opacity', 0));
-      const ticks = d3.timeMinute.every(30) ? d3.range(Math.ceil(min / 1800) * 1800, max + 1, 1800) : [];
-      svg.append('g').attr('transform', `translate(0,${height - margin.bottom + 12})`).selectAll('text').data(ticks).join('text')
-        .attr('x', seconds => x(seconds)).attr('text-anchor', 'middle').attr('fill', '#626d79').attr('font-size', 12).text(seconds => this.formatTime(seconds));
-      svg.append('line').attr('x1', 0).attr('x2', width - margin.right).attr('y1', height - margin.bottom).attr('y2', height - margin.bottom).attr('stroke', '#7f8995');
+      const hourTicks = d3.range(Math.ceil(min / 3600) * 3600, max + 1, 3600);
+      const ticks = [...new Set([min, ...hourTicks.filter(value => Math.abs(value - min) > 120), max])].sort((a, b) => a - b);
+      svg.append('g').selectAll('line').data(ticks).join('line')
+        .attr('x1', seconds => x(seconds / 60)).attr('x2', seconds => x(seconds / 60))
+        .attr('y1', baseline).attr('y2', baseline + 7).attr('stroke', '#27313d');
+      svg.append('g').selectAll('text').data(ticks).join('text')
+        .attr('x', seconds => x(seconds / 60)).attr('y', baseline + 31)
+        .attr('text-anchor', (_, index) => index === 0 ? 'start' : index === ticks.length - 1 ? 'end' : 'middle')
+        .attr('fill', '#17202a').attr('font-size', 13).text(seconds => this.formatTimeExact(seconds));
+      svg.append('line').attr('x1', margin.left).attr('x2', width - margin.right).attr('y1', baseline).attr('y2', baseline).attr('stroke', '#aeb5bd');
+
+      const winners = [this.topAthletes.M[0], this.topAthletes.F[0]].filter(Boolean);
+      const annotationY = [baseline - 48, baseline - 150];
+      winners.forEach((runner, index) => {
+        const runnerX = x(runner.finishSeconds / 60);
+        const textX = Math.max(0, runnerX - 84);
+        svg.append('line').attr('x1', runnerX).attr('x2', runnerX).attr('y1', baseline).attr('y2', annotationY[index] + 10)
+          .attr('stroke', runner.gender === 'F' ? '#f58aa0' : '#52ade8').attr('stroke-width', 1);
+        const label = svg.append('text').attr('x', textX).attr('y', annotationY[index]).attr('font-size', 13).attr('fill', '#111');
+        const words = runner.name.split(' ');
+        words.slice(0, 2).forEach((word, line) => label.append('tspan').attr('x', textX).attr('dy', line ? 16 : 0).text(word));
+        label.append('tspan').attr('x', textX).attr('dy', 16).text(runner.finishTime);
+      });
     },
     formatTime(seconds) {
       const hours = Math.floor(seconds / 3600);
       const minutes = Math.floor((seconds % 3600) / 60);
       return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+    },
+    formatTimeExact(seconds) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const rest = Math.floor(seconds % 60);
+      return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
     }
   },
   async mounted() {
