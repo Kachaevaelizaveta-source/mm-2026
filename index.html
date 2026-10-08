@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Результаты марафона</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="app" class="dashboard">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">SberPrime Moscow Marathon · 2026</p>
+        <h1>Результаты бегунов</h1>
+      </div>
+      <div class="summary" v-if="!loading">
+        <strong>{{ formattedTotal }}</strong>
+        <span>участников</span>
+      </div>
+    </header>
+
+    <div v-if="loading" class="state">Загрузка данных…</div>
+    <div v-else-if="error" class="state state--error">{{ error }}</div>
+    <template v-else>
+      <section class="analytics">
+        <div class="kpi-panel">
+          <div class="race-number"># 2026</div>
+          <div class="race-date">27 сентября<br>Москва</div>
+          <div class="kpi-total">{{ formattedTotal }}</div>
+          <div class="kpi-label">участника</div>
+          <div class="gender-total gender-total--men"><b>{{ genderTotals.M }}</b> мужчин <span>{{ genderPercent.M }}%</span></div>
+          <div class="gender-total gender-total--women"><b>{{ genderTotals.F }}</b> женщин <span>{{ genderPercent.F }}%</span></div>
+          <div class="age-range">от {{ ageRange.min }} до {{ ageRange.max }} лет</div>
+        </div>
+
+        <section class="chart-panel age-panel">
+          <h2>По возрасту и полу</h2>
+          <svg ref="ageChart" class="age-chart" role="img" aria-label="Распределение по возрасту и полу"></svg>
+        </section>
+
+        <section class="chart-panel country-panel">
+          <h2>По странам</h2>
+          <div v-for="country in topCountries" :key="country.name" class="ranking-row">
+            <span>{{ country.name }}</span><b>{{ formatNumber(country.count) }}</b><em>{{ country.percent }}%</em>
+          </div>
+          <p v-if="otherCountryCount" class="other-countries">{{ otherCountryLabel }}</p>
+        </section>
+
+        <section class="chart-panel athletes-panel">
+          <h2>Топ спортсменов</h2>
+          <div class="athlete-group">
+            <div v-for="(runner, index) in topAthletes.M" :key="`m-${runner.resultUrl}`" class="athlete-row athlete-row--men">
+              <i>{{ index + 1 }}</i><span>{{ runner.name }}</span><b>{{ runner.finishTime }}</b>
+            </div>
+          </div>
+          <div class="athlete-group">
+            <div v-for="(runner, index) in topAthletes.F" :key="`f-${runner.resultUrl}`" class="athlete-row athlete-row--women">
+              <i>{{ index + 1 }}</i><span>{{ runner.name }}</span><b>{{ runner.finishTime }}</b>
+            </div>
+          </div>
+        </section>
+
+        <section class="chart-panel finish-panel">
+          <h2>Распределение на финише</h2>
+          <svg ref="finishChart" class="finish-chart" role="img" aria-label="Распределение финишей"></svg>
+        </section>
+      </section>
+
+      <section class="card">
+        <div class="table-meta">
+          <span>Показаны записи {{ firstRecord }}–{{ lastRecord }}</span>
+          <span>Страница {{ currentPage }} из {{ pageCount }}</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Место</th>
+                <th>Бегун</th>
+                <th>Страна</th>
+                <th>Пол</th>
+                <th>Возраст</th>
+                <th>Класс</th>
+                <th>Номер</th>
+                <th>Темп</th>
+                <th>Финиш</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="runner in visibleRunners" :key="runner.resultUrl">
+                <td class="numeric">{{ runner.place }}</td>
+                <td class="runner-name">{{ runner.name }}</td>
+                <td>{{ runner.country }}</td>
+                <td>{{ runner.gender }}</td>
+                <td class="numeric">{{ runner.age }}</td>
+                <td><span class="badge" :class="`badge--${runner.class}`">{{ runner.class }}</span></td>
+                <td class="numeric">{{ runner.bibNumber }}</td>
+                <td class="numeric">{{ runner.pace }}</td>
+                <td class="numeric finish-time">{{ runner.finishTime }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <nav class="pagination" aria-label="Навигация по страницам">
+          <button @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">← Назад</button>
+          <span>Страница {{ currentPage }}</span>
+          <button @click="goToPage(currentPage + 1)" :disabled="currentPage === pageCount">Вперёд →</button>
+        </nav>
+      </section>
+    </template>
+  </main>
+
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="app.js"></script>
+</body>
+</html>
